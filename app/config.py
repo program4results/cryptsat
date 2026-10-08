@@ -24,6 +24,33 @@ def auth_mode() -> str:
     return os.getenv("CRYPTSAT_AUTH", "none").strip().lower()
 
 
+def oidc_issuer() -> str:
+    return os.getenv("CRYPTSAT_OIDC_ISSUER", "").strip()
+
+
+def oidc_audience() -> str:
+    """The OAuth client id this service accepts tokens for."""
+    return os.getenv("CRYPTSAT_OIDC_AUDIENCE", "").strip()
+
+
+def oidc_jwks_uri() -> str | None:
+    return os.getenv("CRYPTSAT_OIDC_JWKS_URI", "").strip() or None
+
+
+def oidc_mfa() -> str:
+    """How sign-in MFA is proven for people:
+    'amr'          (default) the token's amr claim must show MFA. Fail closed.
+    'acr:<value>'  the token's acr claim must equal <value>.
+    'idp-enforced' the provider enforces MFA for every account (e.g. Google Workspace 2-Step Verification
+                   enforcement) and does not put it in the token. Only set this after confirming that policy."""
+    return os.getenv("CRYPTSAT_OIDC_MFA", "amr").strip()
+
+
+def oidc_allowed_domains() -> set[str]:
+    """If set, people must sign in with an email in one of these domains (service identities are exempt)."""
+    return {d.strip().lower() for d in os.getenv("CRYPTSAT_OIDC_ALLOWED_DOMAINS", "").split(",") if d.strip()}
+
+
 def db_dsn() -> str:
     """DSN for the service role (cryptsat_app). Row-level security applies to this role."""
     return os.getenv("CRYPTSAT_DB_DSN", "")
@@ -45,5 +72,13 @@ def check() -> None:
             raise RuntimeError("CRYPTSAT_AUTH=dev is only allowed when CRYPTSAT_ENV is dev or test")
         if amapi_mode() == "fake":
             raise RuntimeError("CRYPTSAT_AMAPI=fake is only allowed when CRYPTSAT_ENV is dev or test")
+    if auth_mode() not in ("none", "dev", "oidc"):
+        raise RuntimeError(f"CRYPTSAT_AUTH={auth_mode()} is not a known mode")
+    if auth_mode() == "oidc":
+        if not oidc_issuer().startswith("https://") or not oidc_audience():
+            raise RuntimeError("CRYPTSAT_AUTH=oidc needs CRYPTSAT_OIDC_ISSUER (https) and CRYPTSAT_OIDC_AUDIENCE")
+        mfa = oidc_mfa()
+        if not (mfa in ("amr", "idp-enforced") or (mfa.startswith("acr:") and len(mfa) > 4)):
+            raise RuntimeError("CRYPTSAT_OIDC_MFA must be amr, acr:<value> or idp-enforced")
     if amapi_mode() not in ("none", "fake"):
         raise RuntimeError(f"CRYPTSAT_AMAPI={amapi_mode()} is not implemented (real client waits for Google quota)")

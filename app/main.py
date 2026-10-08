@@ -23,9 +23,10 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 from psycopg.types.json import Jsonb
 from pydantic import BaseModel, Field, model_validator
 
-from . import VERSION, amapi, audit, config, policy, rings
+from . import VERSION, amapi, audit, config, grants, policy, rings
 from .auth import Principal, current_principal
 from .db import PLATFORM_CHAIN, Database
+from .oidc import Verifier
 
 TenantId = Field(pattern=r"^[a-z][a-z0-9-]{1,30}$")
 PolicyName = Field(pattern=r"^[a-z][a-z0-9-]{1,40}$")
@@ -81,6 +82,19 @@ class TokenIn(BaseModel):
     attest_new_or_factory_reset: bool = Field(
         description="Operator confirms every tablet using this token is new or factory-reset, "
                     "and none is one of the existing field tablets.")
+
+
+class GrantIn(BaseModel):
+    subject: str = Field(min_length=3, max_length=320)
+    kind: Literal["human", "service"] = "human"
+    tenant_id: str = Field(pattern=r"^(\*|[a-z][a-z0-9-]{1,30})$")
+    role: Literal["viewer", "operator", "admin", "reader", "super_admin"]
+
+
+class RevokeIn(BaseModel):
+    subject: str = Field(min_length=3, max_length=320)
+    tenant_id: str = Field(pattern=r"^(\*|[a-z][a-z0-9-]{1,30})$")
+    role: Literal["viewer", "operator", "admin", "reader", "super_admin"]
 
 
 class CommandIn(BaseModel):
@@ -146,7 +160,8 @@ def clean(row: dict[str, Any]) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------- app
-def create_app(db: Database | None = None, amapi_client: amapi.AmapiClient | None = None) -> FastAPI:
+def create_app(db: Database | None = None, amapi_client: amapi.AmapiClient | None = None,
+               oidc_verifier: Verifier | None = None) -> FastAPI:
     config.check()
     own_db = db is None
 
@@ -161,6 +176,9 @@ def create_app(db: Database | None = None, amapi_client: amapi.AmapiClient | Non
     app = FastAPI(title="CryptSat MDM", version=VERSION, lifespan=lifespan)
     app.state.db = db or Database(config.db_dsn())
     app.state.amapi = amapi_client or amapi.make_client(config.amapi_mode())
+    app.state.oidc = oidc_verifier
+    if app.state.oidc is None and config.auth_mode() == "oidc":
+        app.state.oidc = Verifier(config.oidc_issuer(), config.oidc_audience(), config.oidc_jwks_uri())
 
     @app.exception_handler(amapi.NotConfigured)
     async def _not_configured(_: Request, exc: amapi.NotConfigured) -> JSONResponse:
@@ -169,6 +187,48 @@ def create_app(db: Database | None = None, amapi_client: amapi.AmapiClient | Non
     @app.get("/healthz")
     def healthz() -> dict[str, Any]:
         return {"ok": True, "version": VERSION}
+
+    @app.get("/me")
+    def me(p: Principal = Depends(current_principal)) -> dict[str, Any]:
+        return {"subject": p.subject, "kind": p.kind, "super_admin": p.is_super,
+                "roles": {t: sorted(r) for t, r in sorted(p.roles.items())}}
+
+    # ------------------------------------------------------------ grants (super-admin only)
+    @app.get("/grants")
+    def list_grants(tenant: str | None = None, p: Principal = Depends(current_principal),
+                    db: Database = Depends(get_db)):
+        require_super(db, p, "grant.list")
+        with db.platform() as c:
+            sql, args = "SELECT * FROM role_grants", []
+            if tenant:
+                sql, args = sql + " WHERE tenant_id = %s", [tenant]
+            return [clean(r) for r in c.execute(sql + " ORDER BY tenant_id, subject, role", args)]
+
+    @app.post("/grants", status_code=201)
+    def add_grant(body: GrantIn, p: Principal = Depends(current_principal), db: Database = Depends(get_db)):
+        require_super(db, p, "grant.add")
+        try:
+            with db.platform() as c:
+                return grants.add(c, p.subject, body.subject, body.kind, body.tenant_id, body.role)
+        except grants.GrantError as e:
+            raise HTTPException(422, str(e)) from None
+
+    @app.post("/grants/revoke")
+    def revoke_grant(body: RevokeIn, p: Principal = Depends(current_principal), db: Database = Depends(get_db)):
+        require_super(db, p, "grant.revoke")
+        try:
+            with db.platform() as c:
+                return grants.revoke(c, p.subject, body.subject, body.tenant_id, body.role)
+        except grants.GrantError as e:
+            raise HTTPException(409, str(e)) from None
+
+    @app.get("/tenants/{tid}/grants")
+    def tenant_grants(tid: str, p: Principal = Depends(current_principal), db: Database = Depends(get_db)):
+        authorise(db, p, tid, "admin")
+        with db.tenant(tid) as c:
+            load_tenant(c, tid)
+            return [clean(r) for r in c.execute("SELECT subject, kind, role, granted_by, granted_at "
+                                                "FROM role_grants ORDER BY subject, role")]
 
     # ------------------------------------------------------------ tenants
     @app.post("/tenants", status_code=201)

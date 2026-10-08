@@ -36,6 +36,14 @@ class Database:
             yield conn
 
     @contextmanager
+    def auth(self) -> Iterator[psycopg.Connection]:
+        """Sign-in scope: may read role grants, record sessions and write the '_platform' audit chain. Nothing else."""
+        with self.pool.connection() as conn, conn.transaction():
+            conn.execute("SELECT set_config('app.tenant_id', %s, true), set_config('app.scope', 'auth', true)",
+                         [PLATFORM_CHAIN])
+            yield conn
+
+    @contextmanager
     def platform(self) -> Iterator[psycopg.Connection]:
         """Platform scope: may list and create tenants and write the '_platform' audit chain. Super-admin only."""
         with self.pool.connection() as conn, conn.transaction():
