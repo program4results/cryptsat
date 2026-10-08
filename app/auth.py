@@ -98,6 +98,9 @@ def check_identity(subject: str, kind: str, claims: dict[str, Any]) -> str | Non
         domains = config.oidc_allowed_domains()
         if domains and subject.rsplit("@", 1)[1] not in domains:
             return "email domain not allowed"
+        hosted = config.oidc_hosted_domains()
+        if hosted and str(claims.get("hd", "")).lower() not in hosted:
+            return "account is not in an allowed Google Workspace organisation"
         if not mfa_ok(claims, config.oidc_mfa()):
             return "sign-in did not use multi-factor authentication"
     return None

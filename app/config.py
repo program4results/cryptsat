@@ -51,6 +51,12 @@ def oidc_allowed_domains() -> set[str]:
     return {d.strip().lower() for d in os.getenv("CRYPTSAT_OIDC_ALLOWED_DOMAINS", "").split(",") if d.strip()}
 
 
+def oidc_hosted_domains() -> set[str]:
+    """If set, people's tokens must carry an hd (hosted domain) claim in this list. Google advises checking hd,
+    not just the email address, when limiting sign-in to an organisation's domains."""
+    return {d.strip().lower() for d in os.getenv("CRYPTSAT_OIDC_HOSTED_DOMAINS", "").split(",") if d.strip()}
+
+
 def db_dsn() -> str:
     """DSN for the service role (cryptsat_app). Row-level security applies to this role."""
     return os.getenv("CRYPTSAT_DB_DSN", "")

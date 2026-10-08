@@ -274,3 +274,33 @@ def test_oidc_mode_requires_issuer_and_audience(monkeypatch):
         config.check()
     monkeypatch.setenv("CRYPTSAT_OIDC_MFA", "amr")
     config.check()
+
+
+def test_google_issuer_in_both_documented_forms():
+    google = IdP()
+    gi = "https://accounts.google.com"
+
+    def fetch(url):
+        return {"issuer": gi, "jwks_uri": f"{gi}/jwks"} if "well-known" in url else google.jwks()
+    v = Verifier(gi, AUD, fetch=fetch)
+    assert v.verify(google.token(iss="https://accounts.google.com"))
+    assert v.verify(google.token(iss="accounts.google.com"))
+    with pytest.raises(InvalidToken):
+        v.verify(google.token(iss="accounts.google.com.evil.example"))
+    # Other issuers get no aliases.
+    with pytest.raises(InvalidToken):
+        Verifier(ISS, AUD, fetch=google.fetch).verify(google.token(iss=ISS.removeprefix("https://")))
+
+
+def test_hosted_domain_claim(sso, root, idp, monkeypatch):
+    sso.post("/grants", headers=root, json={"subject": "ada@program4results.example", "tenant_id": "*",
+                                            "role": "super_admin"})
+    monkeypatch.setenv("CRYPTSAT_OIDC_HOSTED_DOMAINS", "saltracker.example,program4results.example")
+    assert sso.get("/me", headers=bearer(idp.person("ada@program4results.example",
+                                                    hd="program4results.example"))).status_code == 200
+    assert sso.get("/me", headers=bearer(idp.person("ada@program4results.example",
+                                                    hd="saltracker.example"))).status_code == 200
+    # Same email but no organisation (a consumer account) or a different one: refused.
+    assert sso.get("/me", headers=bearer(idp.person("ada@program4results.example"))).status_code == 403
+    assert sso.get("/me", headers=bearer(idp.person("ada@program4results.example",
+                                                    hd="other.example"))).status_code == 403

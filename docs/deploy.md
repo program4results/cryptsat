@@ -35,8 +35,9 @@ project; the image itself runs anywhere that runs containers.
 `CRYPTSAT_AUTH=dev` and `CRYPTSAT_AMAPI=fake` refuse to start in production.
 
 ### Identity provider notes
-- **Google Workspace** (if SALTRACKER and ministry staff sign in with Google): issuer
-  `https://accounts.google.com`. Google ID tokens are not expected to carry an `amr` claim (not verified), so
+- **Google Workspace** (SALTRACKER's choice; settings in `deploy/google-sso.env`): issuer
+  `https://accounts.google.com` (tokens may also say `accounts.google.com`; both are accepted).
+  Set `CRYPTSAT_OIDC_HOSTED_DOMAINS` so the `hd` claim is checked, as Google advises. Google ID tokens are not expected to carry an `amr` claim (not verified), so
   enforce 2-Step Verification for every account in the Workspace admin console and set
   `CRYPTSAT_OIDC_MFA=idp-enforced`. Restrict with `CRYPTSAT_OIDC_ALLOWED_DOMAINS`.
 - **Microsoft Entra ID or Keycloak:** both can put `amr` (or a step-up `acr`) in tokens; keep the default `amr`

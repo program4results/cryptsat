@@ -23,6 +23,10 @@ REFETCH_MIN_SECONDS = 60
 
 Fetch = Callable[[str], dict[str, Any]]
 
+# Google documents that its ID tokens carry iss as either form (developers.google.com/identity/openid-connect,
+# checked 2026-10-08). Other providers use exactly the configured issuer.
+ISSUER_ALIASES = {"https://accounts.google.com": ("https://accounts.google.com", "accounts.google.com")}
+
 
 class InvalidToken(Exception):
     pass
@@ -42,6 +46,7 @@ class Verifier:
         if not issuer or not audience:
             raise ValueError("issuer and audience are required")
         self.issuer = issuer.rstrip("/")
+        self.accepted_issuers = list(ISSUER_ALIASES.get(self.issuer, (self.issuer,)))
         self.audience = audience
         self._jwks_uri = jwks_uri
         self._fetch = fetch
@@ -99,7 +104,7 @@ class Verifier:
             raise InvalidToken("algorithm does not match key")
         try:
             claims = jwt.decode(
-                token, key.key, algorithms=[alg], audience=self.audience, issuer=self.issuer,
+                token, key.key, algorithms=[alg], audience=self.audience, issuer=self.accepted_issuers,
                 leeway=LEEWAY_SECONDS, options={"require": ["exp", "iat", "iss", "aud", "sub"]},
             )
         except jwt.PyJWTError as e:

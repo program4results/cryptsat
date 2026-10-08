@@ -76,6 +76,7 @@ Dev auth and the fake AMAPI refuse to start unless `CRYPTSAT_ENV` is `dev` or `t
 | `CRYPTSAT_OIDC_ISSUER` / `_AUDIENCE` | | identity provider issuer (https) and this service's client id |
 | `CRYPTSAT_OIDC_MFA` | `amr` | `amr`, `acr:<value>`, or `idp-enforced` (see `docs/deploy.md`) |
 | `CRYPTSAT_OIDC_ALLOWED_DOMAINS` | | optional comma list of email domains for people |
+| `CRYPTSAT_OIDC_HOSTED_DOMAINS` | | optional; people's tokens must carry an `hd` claim in this list (Google Workspace) |
 | `CRYPTSAT_OIDC_JWKS_URI` | | optional; otherwise discovered from the issuer |
 | `CRYPTSAT_AMAPI` | `none` | `none` fails Google calls with 503; `fake` in-memory |
 | `CRYPTSAT_DB_DSN` | | service role (`cryptsat_app`) |
