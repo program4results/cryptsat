@@ -1,0 +1,30 @@
+name: test
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Bootstrap roles and test database
+        run: |
+          psql -h localhost -U postgres -v ON_ERROR_STOP=1 -f db/bootstrap.sql
+          psql -h localhost -U postgres -c "ALTER ROLE cryptsat_owner PASSWORD 'owner'"
+          psql -h localhost -U postgres -c "ALTER ROLE cryptsat_app PASSWORD 'app'"
+          psql -h localhost -U postgres -c "CREATE DATABASE cryptsat_test OWNER cryptsat_owner"
+      - run: pip install -r requirements-dev.txt
+      - run: ruff check app tests
+      - run: pytest -q

@@ -1,0 +1,17 @@
+[project]
+name = "cryptsat-mdm"
+version = "0.1.0"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning:starlette.*"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B"]
+# E501: a few long assertion lines in tests. B008: Depends() in defaults is the FastAPI idiom.
+ignore = ["E501", "B008"]

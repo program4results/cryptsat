@@ -5,3 +5,5 @@ __pycache__/
 data/
 *.json.key
 service-account*.json
+.ruff_cache/
+.pytest_cache/
