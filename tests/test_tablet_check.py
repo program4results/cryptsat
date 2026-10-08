@@ -50,6 +50,26 @@ def test_used_tablet_needs_a_reset():
     assert r["verdict"] == "READY (after a factory reset)"
     assert "ERASES EVERYTHING" in next(c["detail"] for c in r["checks"] if c["check"] == "Setup state")
     assert "remove Google accounts" in r["next_steps"][0]
+    assert r["google_accounts"] == ["a@gmail.com"]
+
+
+def test_accounts_are_counted_once_and_profiles_named():
+    repeated = "Account {name=a@gmail.com, type=com.google}\n" * 6 + "Account {name=b@x.org, type=com.google}"
+    users = "Users:\n\tUserInfo{0:Owner:c13} running\n\tUserInfo{150:Secure Folder:10001030} running"
+    run, _ = fake({**FRESH, "setup_complete": "1", "accounts": repeated, "users": users})
+    r = tc.check(run)
+    assert r["google_accounts"] == ["a@gmail.com", "b@x.org"] and r["profiles"] == ["Secure Folder"]
+    assert statuses(r)["Existing management"] == "OK"
+
+
+def test_work_profile_owner_is_named():
+    owners = "User 10: admin=com.google.android.apps.work.clouddpc/.receivers.CloudDeviceAdminReceiver,ProfileOwner"
+    users = "Users:\n\tUserInfo{0:Owner:c13} running\n\tUserInfo{10:Work profile:1030} running"
+    run, _ = fake({**FRESH, "owners": owners, "users": users})
+    r = tc.check(run)
+    detail = next(c["detail"] for c in r["checks"] if c["check"] == "Existing management")
+    assert statuses(r)["Existing management"] == "WARN"
+    assert "com.google.android.apps.work.clouddpc" in detail and "Work profile" in detail
 
 
 @pytest.mark.parametrize("override,check", [

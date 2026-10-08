@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -93,17 +94,22 @@ def check(run: Runner, adb_serial: str = "", protected: set[str] | None = None) 
     serial = info["serial_prop"] or info["serial_boot"] or adb_serial
     sdk = int(info["sdk"]) if info["sdk"].isdigit() else 0
     owners = info["owners"]
-    has_device_owner = "device owner" in owners.lower() or "deviceowner" in owners.lower().replace(" ", "")
-    has_profile_owner = "profile owner" in owners.lower()
-    work_profile = sum(1 for line in info["users"].splitlines() if "UserInfo{" in line) > 1
+    compact = owners.lower().replace(" ", "")
+    has_device_owner = "deviceowner" in compact
+    has_profile_owner = "profileowner" in compact
+    owner_apps = sorted(set(re.findall(r"admin=([\w.]+)", owners)))
+    # Every user/profile except the main one (id 0), by name, e.g. "Secure Folder" or "Work profile".
+    profiles = [m.group(2) for m in re.finditer(r"UserInfo\{(\d+):([^:}]*)", info["users"]) if m.group(1) != "0"]
     setup_done = info["setup_complete"] == "1" or info["provisioned"] == "1"
-    google_accounts = info["accounts"].count("type=com.google")
+    # dumpsys repeats each account several times; count distinct names.
+    google_accounts = sorted(set(re.findall(r"Account \{name=([^,]+), type=com\.google\}", info["accounts"])))
 
     report: dict[str, Any] = {
         "tablet": {
             "manufacturer": info["manufacturer"], "model": info["model"], "android": info["android"],
             "sdk": sdk, "security_patch": info["patch"], "serial": serial,
         },
+        "profiles": profiles, "profile_owner_apps": owner_apps, "google_accounts": google_accounts,
         "checks": [], "verdict": "", "next_steps": [],
     }
     checks = report["checks"]
@@ -140,8 +146,14 @@ def check(run: Runner, adb_serial: str = "", protected: set[str] | None = None) 
         add("Existing management", "STOP", "the tablet already has a device owner (managed by something else). "
                                            f"Find out what before touching it. dpm says: {owners[:200]}")
         stop = True
-    elif has_profile_owner or work_profile:
-        add("Existing management", "WARN", "a work profile or profile owner exists; a factory reset removes it")
+    elif has_profile_owner:
+        apps = ", ".join(owner_apps) or "unknown app"
+        add("Existing management", "WARN", f"a work profile is managed by {apps} (profiles: "
+                                           f"{', '.join(profiles) or 'none named'}). Find out which organisation "
+                                           "manages it; a factory reset removes it and its data")
+    elif profiles:
+        add("Existing management", "OK", f"no management; extra profiles only: {', '.join(profiles)} "
+                                          "(e.g. Samsung Secure Folder), removed by a factory reset")
     else:
         add("Existing management", "OK", "no device owner or work profile")
 
@@ -155,7 +167,8 @@ def check(run: Runner, adb_serial: str = "", protected: set[str] | None = None) 
         add("Camera for QR", "WARN", "no camera found; use afw#setup and type the enrolment token")
 
     if setup_done:
-        add("Setup state", "INFO", f"setup is already complete ({google_accounts} Google account(s) on it). "
+        accts = ", ".join(google_accounts) or "none found"
+        add("Setup state", "INFO", f"setup is already complete; Google accounts on it: {accts}. "
                                    "Enrolment needs a factory reset, which ERASES EVERYTHING on the tablet.")
     else:
         add("Setup state", "OK", "setup wizard not finished: ready for enrolment without a reset")
