@@ -120,3 +120,10 @@ def test_platform_chain(client):
     v = client.get("/platform/audit/verify", headers=SUPER).json()
     assert v["ok"] and v["records"] >= 1
     assert client.get("/platform/audit/verify", headers=who("x", "sl:admin")).status_code == 403
+
+
+def test_verify_all_chains(client, database):
+    from app.verify_audit import verify_all
+    tid, _ = new_tenant(client)
+    results = {r["chain"]: r for r in verify_all(database)}
+    assert results[tid]["ok"] and results["_platform"]["ok"]

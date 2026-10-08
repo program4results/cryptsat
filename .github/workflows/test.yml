@@ -28,3 +28,14 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - run: ruff check app tests
       - run: pytest -q
+
+  image:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the service image
+        run: docker build -t cryptsat-mdm:ci .
+      - name: Image refuses to serve without settings, and runs as non-root
+        run: |
+          test "$(docker run --rm --entrypoint id cryptsat-mdm:ci -u)" = "10001"
+          ! docker run --rm cryptsat-mdm:ci python -c "from app.main import create_app; create_app()"

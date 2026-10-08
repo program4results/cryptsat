@@ -10,8 +10,11 @@ Checked against developers.google.com/android/management/reference on 2026-10-08
     blocked here, in the API, and in the database. It is.
   - EnrollmentToken has duration (a "<n>s" string; default 1 hour), policyName, oneTimeOnly, qrCode,
     additionalData, value, expirationTimestamp.
-NOT verified yet (confirm before the real client): the Device field names used in device_from_amapi(), the
-allowed character set for policy ids, and whether policy assignment is a devices.patch of policyName.
+  - Device fields name, state (ACTIVE, DISABLED, DELETED, PROVISIONING, LOST, ...), policyName,
+    appliedPolicyName, policyCompliant, lastStatusReportTime, enrollmentTime, enrollmentTokenData.
+  - Devices are reassigned to a policy with devices.patch on policyName (a bare policy id without slashes is
+    accepted). Methods on enterprises.devices: delete, get, issueCommand, list, patch.
+NOT verified yet: hardwareInfo.serialNumber (that section of the page was cut off).
 """
 from __future__ import annotations
 
@@ -109,7 +112,7 @@ class FakeAmapi:
 
 
 def device_from_amapi(d: dict[str, Any]) -> dict[str, Any]:
-    """Map an AMAPI Device to our columns. Field names NOT verified against Google's Device reference yet."""
+    """Map an AMAPI Device to our columns. Verified 2026-10-08 except hardwareInfo.serialNumber."""
     name = d["name"]
     return {
         "id": name.rsplit("/", 1)[-1],

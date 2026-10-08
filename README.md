@@ -21,18 +21,25 @@ Built and tested:
 - Protected serial list for the existing field tablets: flagged with an alert if ever seen, never touched.
 - Enrolment tokens require an attestation that tablets are new or factory-reset; the token value is never stored.
 - Read-only endpoint for the sl.p4sgi adapter (`/readonly/v1/...`, role `reader`).
+- Single sign-on (OIDC bearer tokens): signature, issuer, audience and expiry checks; MFA required for people;
+  roles from the `role_grants` table (super-admin managed, audited, last-super-admin guard); service identities
+  limited to `reader`; each sign-in audited once.
+- `python -m app.verify_audit` checks every chain and exits 1 on any break (for a scheduled job).
+- Container image (`Dockerfile`, non-root) and deployment notes in `docs/deploy.md`.
 
-Missing: OIDC login with MFA (every request is 401 until then), the real Google client (fails closed with 503),
-secret-store wiring, deployment, and audit of logins (comes with OIDC).
+Missing: the real Google client (fails closed with 503) and service-account handling, the dashboard and its
+sign-in flow, alerting, infrastructure as code.
 
-## Not verified with Google (check before the first real enrolment)
-Checked on 2026-10-08 against the AMAPI reference: the policy keys allowed in `app/policy.py` exist on Policy;
-LOCK and REBOOT are command types and WIPE is one too (hence the blocks); enrolment-token fields.
-Still unverified:
-- Whether `debuggingFeaturesAllowed` and `installUnknownSourcesAllowed` are deprecated in favour of
-  `advancedSecurityOverrides`, and the `statusReportingSettings` subfield names in the baseline template.
-- Device field names in `amapi.device_from_amapi()`, the policy-id character set, and how a device's policy
-  is reassigned.
+## Google facts (checked 2026-10-08)
+Verified: policy keys allowed in `app/policy.py` exist on Policy; `passwordRequirements` and
+`installUnknownSourcesAllowed` are deprecated (now rejected); `statusReportingSettings` subfields; LOCK and REBOOT
+are command types and WIPE is one too (hence the blocks); enrolment-token fields; Device fields used in
+`amapi.device_from_amapi()`; devices are reassigned with `devices.patch` of `policyName`.
+
+Still unverified (check before the first real enrolment):
+- Whether `debuggingFeaturesAllowed` is deprecated in favour of `advancedSecurityOverrides.developerSettings`
+  (the baseline still uses it for the ADB exception), and that setting's values.
+- `hardwareInfo.serialNumber` on Device (page cut off).
 - Google partner validation, quota and timeline. Data residency rules per ministry.
 
 ## Rules
@@ -65,14 +72,19 @@ Dev auth and the fake AMAPI refuse to start unless `CRYPTSAT_ENV` is `dev` or `t
 | Variable | Default | Meaning |
 |---|---|---|
 | `CRYPTSAT_ENV` | `production` | `dev` / `test` unlock dev-only settings |
-| `CRYPTSAT_AUTH` | `none` | `none` refuses all requests (OIDC pending); `dev` header principal |
+| `CRYPTSAT_AUTH` | `none` | `none` refuses all requests; `oidc` single sign-on; `dev` header principal |
+| `CRYPTSAT_OIDC_ISSUER` / `_AUDIENCE` | | identity provider issuer (https) and this service's client id |
+| `CRYPTSAT_OIDC_MFA` | `amr` | `amr`, `acr:<value>`, or `idp-enforced` (see `docs/deploy.md`) |
+| `CRYPTSAT_OIDC_ALLOWED_DOMAINS` | | optional comma list of email domains for people |
+| `CRYPTSAT_OIDC_JWKS_URI` | | optional; otherwise discovered from the issuer |
 | `CRYPTSAT_AMAPI` | `none` | `none` fails Google calls with 503; `fake` in-memory |
 | `CRYPTSAT_DB_DSN` | | service role (`cryptsat_app`) |
 | `CRYPTSAT_DB_OWNER_DSN` | | schema owner, migrations only |
 | `CRYPTSAT_DRY_RUN_MAX_AGE_HOURS` | `24` | dry runs older than this cannot be applied |
 
 ## Roles
-Per tenant: `viewer` < `operator` (sync, dry run, pause) < `admin` (policies, apply, rings, resume, tokens,
+Granted in the database by super-admins (`POST /grants`); the first super-admin is created once with
+`python -m app.grants bootstrap <email>`. Per tenant: `viewer` < `operator` (sync, dry run, pause) < `admin` (policies, apply, rings, resume, tokens,
 audit export). `reader` is the sl.p4sgi adapter and can only call `/readonly`. `super_admin` (platform):
 tenants, enterprise binding, device commands.
 
@@ -82,4 +94,5 @@ tenants, enterprise binding, device commands.
 `POST /tenants/{t}/devices/sync` · `GET /tenants/{t}/devices` · `POST /tenants/{t}/devices/{d}/commands` ·
 `POST /tenants/{t}/policies/{name}/versions` · `POST .../versions/{v}/dry-run` ·
 `POST /tenants/{t}/dry-runs/{id}/apply` · `POST /tenants/{t}/enrolment-tokens` ·
-`GET /tenants/{t}/audit[/verify|/export]` · `GET /readonly/v1/tenants/{t}/devices`
+`GET /tenants/{t}/audit[/verify|/export]` · `GET /readonly/v1/tenants/{t}/devices` ·
+`GET /me` · `GET|POST /grants` · `POST /grants/revoke` · `GET /tenants/{t}/grants`

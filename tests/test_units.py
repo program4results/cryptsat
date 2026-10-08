@@ -28,6 +28,10 @@ def test_policy_validation():
     assert policy.validate({"wipeDataFlags": ["X"]}) == ["unknown policy key: wipeDataFlags"]
     assert policy.validate({"keyguardDisabled": True}) == ["forbidden setting: keyguardDisabled=True"]
     assert policy.validate({}) == ["policy must be a non-empty object"]
+    assert policy.validate({"installUnknownSourcesAllowed": False})[0].startswith("deprecated policy key")
+    assert policy.validate({"passwordRequirements": {}})[0].startswith("deprecated policy key")
+    assert policy.validate({"statusReportingSettings": {"locationEnabled": True}}) == \
+        ["unknown statusReportingSettings key: locationEnabled"]
     assert policy.diff({"a": 1, "b": 2}, {"b": 3, "c": 4}) == {"added": ["c"], "removed": ["a"], "changed": ["b"]}
 
 
